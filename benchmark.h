@@ -92,6 +92,8 @@ double Regress(int pointCount, int sampleCount, int resolution, void(*func)())
     return (double)(pointCount * xy - _x * _y) / (pointCount * xx - _x * _x);
 }
 
+
+// num - numberf of interation, pointCount - number of points in regression, sampleCount - number of samples, resolution - number of iteration in one test (this number cannot be too small)
 Stats Benchmark(int num, int pointCount, int sampleCount, int resolution, void(*func)())
 {
     std::cout << "Benchmark begin " << "(Resolution: " << resolution << ")" << std::endl ;
@@ -130,13 +132,15 @@ Stats Benchmark(int num, int pointCount, int sampleCount, int resolution, void(*
     return { result.avg, result.dev };
 }
 
+
+// use this method to find resolution automatically
 int FindResolution(int sampleCount, void(*func)())
 {
     double result = 0;
 
     int i = 0;
 
-    while (result < 10000)
+    while (result < 10000) // 10 000 gives less error; you can use any nuber, but below 1000 gives unresonable big error
     {
         i++;
 
