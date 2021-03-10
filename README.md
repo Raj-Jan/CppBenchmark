@@ -5,7 +5,7 @@ Usage:
 2. #include it and invoke Benchmark or BenchmarkAuto functions.
 3. (optional) Invoke print method on result.
 
-Methods uses console to print progression, but not result of benchmark.
+Methods uses console to print progression and results.
 
 Algorithm used:
 1. Run code in loop and measure its execution time (loops are necessary for function with low execution time).
