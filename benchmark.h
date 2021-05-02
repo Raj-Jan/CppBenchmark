@@ -33,7 +33,7 @@ private:
     }
 };
 
-double Run(int resolution, void(*func)())
+template<typename T> double Run(int resolution)
 {
     __int64 total = 0;
     __int64 start;
@@ -41,8 +41,10 @@ double Run(int resolution, void(*func)())
 
     start = _Query_perf_counter();
 
+    T test = T();
+
     for (int j = 0; j < resolution; j++)
-        func();
+        test();
 
     stop = _Query_perf_counter();
 
@@ -52,14 +54,14 @@ double Run(int resolution, void(*func)())
 
     return total * freq;
 }
-double Sample(int sampleCount, int resolution, void(*func)())
+template<typename T> double Sample(int sampleCount, int resolution)
 {
     double result = DBL_MAX;
     double x = 0;
     
     for (int i = 0; i < sampleCount; i++)
     {
-        x = Run(resolution, func);
+        x = Run<T>(resolution);
 
         if (result > x)
             result = x;
@@ -67,7 +69,7 @@ double Sample(int sampleCount, int resolution, void(*func)())
 
     return result;
 }
-double Regress(int pointCount, int sampleCount, int resolution, void(*func)())
+template<typename T> double Regress(int pointCount, int sampleCount, int resolution)
 {
     double _x = 0;
     double _y = 0;
@@ -80,7 +82,7 @@ double Regress(int pointCount, int sampleCount, int resolution, void(*func)())
         auto y = 0.0;
 
         for (int j = 0; j < i; j++)
-            y += Sample(sampleCount, resolution, func) / resolution;
+            y += Sample<T>(sampleCount, resolution) / resolution;
 
         _x += x;
         _y += y;
@@ -92,9 +94,8 @@ double Regress(int pointCount, int sampleCount, int resolution, void(*func)())
     return (double)(pointCount * xy - _x * _y) / (pointCount * xx - _x * _x);
 }
 
-
 // num - numberf of interation, pointCount - number of points in regression, sampleCount - number of samples, resolution - number of iteration in one test (this number cannot be too small)
-Stats Benchmark(int num, int pointCount, int sampleCount, int resolution, void(*func)())
+template<typename T> Stats Benchmark(int num, int pointCount, int sampleCount, int resolution)
 {
     std::cout << "Benchmark begin " << "(Resolution: " << resolution << ")" << std::endl ;
 
@@ -111,7 +112,7 @@ Stats Benchmark(int num, int pointCount, int sampleCount, int resolution, void(*
             std::cout << x / 100 << "%" << std::endl;
         }
 
-        records[i] = Regress(pointCount, sampleCount, resolution, func);
+        records[i] = Regress<T>(pointCount, sampleCount, resolution);
 
         result.avg += records[i];
     }
@@ -132,9 +133,8 @@ Stats Benchmark(int num, int pointCount, int sampleCount, int resolution, void(*
     return { result.avg, result.dev };
 }
 
-
 // use this method to find resolution automatically
-int FindResolution(int sampleCount, void(*func)())
+template<typename T> int FindResolution(int sampleCount)
 {
     double result = 0;
 
@@ -144,18 +144,18 @@ int FindResolution(int sampleCount, void(*func)())
     {
         i++;
 
-        result = Sample(sampleCount, i, func);
+        result = Sample<T>(sampleCount, i);
     }
 
     return i;
 }
 
-Stats BenchmarkAuto(void(*func)())
+template<typename T> Stats BenchmarkAuto()
 {
     int num = 20;
     int pointCount = 20;
     int sampleCount = 10;
-    int resolution = FindResolution(sampleCount, func);
+    int resolution = FindResolution<T>(sampleCount);
 
-    return Benchmark(num, pointCount, sampleCount, resolution, func);
+    return Benchmark<T>(num, pointCount, sampleCount, resolution);
 }
