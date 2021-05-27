@@ -1,75 +1,144 @@
 #pragma once
+#include <thread>
 #include <chrono>
 #include <iostream>
+#include <Windows.h>
+
+class Timer
+{
+    __int64 start;
+
+public:
+    void mark()
+    {
+        start = _Query_perf_counter();
+    }
+    double check()
+    {
+        const static double freq = 1e9 / _Query_perf_frequency();
+
+        __int64 stop = stop = _Query_perf_counter();
+
+        return (stop - start) * freq;
+    }
+};
+
+class ProgressBar
+{
+    Timer timer;
+    int _max;
+
+public:
+    char** lineStart;
+    int current = 0;
+
+    ProgressBar(int _max) : _max(_max) { }
+
+    void run(int width, int sleep)
+    {
+        timer.mark();
+
+        float progress = current / float(_max);;
+
+        while (current < _max)
+        {
+            std::cout << "\r[";
+
+            int pos = width * progress;
+
+            for (int i = 0; i < pos; ++i)
+            {
+                std::cout << '=';
+            }
+            for (; pos < width; pos++)
+            {
+                std::cout << ' ';
+            }
+
+            double est = timer.check() * (1 - progress) / progress * 1e-9;
+
+            std::cout << "] " << int(progress * 100.0) << "% EST: " << est << "s\r";
+            //std::cout.flush();
+
+            Sleep(sleep);
+
+            progress = current / float(_max);
+        }
+
+        std::cout << "\r[== Done ==]   ";
+    }
+};
 
 struct Stats
 {
     double avg;
     double dev;
 
-    void PrintNS()
+    void PrintNS(bool fill = true)
     {
-        Print("ns", 1e0);
+        Print(" ns", 1e0, fill);
     }
-    void PrintUS()
+    void PrintUS(bool fill = true)
     {
-        Print("us", 1e-3);
+        Print(" us", 1e-3, fill);
     }
-    void PrintMS()
+    void PrintMS(bool fill = true)
     {
-        Print("ms", 1e-6);
+        Print(" ms", 1e-6, fill);
     }    
-    void PrintS()
+    void PrintS(bool fill = true)
     {
-        Print("s", 1e-9);
+        Print(" s", 1e-9, fill);
+    }
+
+    void PrintAuto(bool fill = true)
+    {
+        if (avg > 1e9) PrintS(fill);
+        else if (avg > 1e6) PrintMS(fill);
+        else if (avg > 1e3) PrintUS(fill);
+        else PrintNS(fill);
     }
 
 private:
-
-    void Print(const char* unit, double x)
+    void Print(const char* unit, double x, bool fill)
     {
-        std::cout << std::endl << "Avg: " << avg * x << " +-" << dev * x << unit << std::endl;
-        std::cout << std::endl;
+        std::cout << "Avg: " << avg * x << "  +-" << dev * x << unit << "                                                " << std::endl;
     }
 };
 
 template<typename T> double Run(int resolution)
 {
-    __int64 total = 0;
-    __int64 start;
-    __int64 stop;
+    Timer t;
+    T* tests = new T[resolution];
 
-    start = _Query_perf_counter();
-
-    T test = T();
+    t.mark();
 
     for (int j = 0; j < resolution; j++)
-        test();
+        tests[j]();
 
-    stop = _Query_perf_counter();
+    double result = t.check();
 
-    total += stop - start;
+    delete[] tests;
 
-    double freq = 1e9 / _Query_perf_frequency();
-
-    return total * freq;
+    return result;
 }
-template<typename T> double Sample(int sampleCount, int resolution)
+template<typename T> double Sample(int sampleCount, int resolution, int& progress)
 {
     double result = DBL_MAX;
-    double x = 0;
     
     for (int i = 0; i < sampleCount; i++)
     {
-        x = Run<T>(resolution);
+        double x = Run<T>(resolution);
 
         if (result > x)
             result = x;
+
+        progress++;
     }
 
     return result;
 }
-template<typename T> double Regress(int pointCount, int sampleCount, int resolution)
+template<typename T> double Regress(int pointCount, int sampleCount, int resolution, int& progress)
 {
     double _x = 0;
     double _y = 0;
@@ -82,7 +151,7 @@ template<typename T> double Regress(int pointCount, int sampleCount, int resolut
         auto y = 0.0;
 
         for (int j = 0; j < i; j++)
-            y += Sample<T>(sampleCount, resolution) / resolution;
+            y += Sample<T>(sampleCount, resolution, progress) / resolution;
 
         _x += x;
         _y += y;
@@ -94,28 +163,55 @@ template<typename T> double Regress(int pointCount, int sampleCount, int resolut
     return (double)(pointCount * xy - _x * _y) / (pointCount * xx - _x * _x);
 }
 
+// use this method to find resolution automatically
+template<typename T> int FindResolution(int sampleCount)
+{
+    double result = 0;
+
+    int i = 1;
+
+    const static int min_res = 2000;
+
+    int dummy;
+
+    while (result < min_res)
+    {
+        result = Sample<T>(sampleCount, i, dummy);
+
+        if (result)
+        {
+            i *= 1.1 * min_res / result;
+
+            if (i == 0)  return 1;
+        }
+        else
+        {
+            i *= 2;
+        }
+    }
+
+    return i;
+}
+
 // num - numberf of interation, pointCount - number of points in regression, sampleCount - number of samples, resolution - number of iteration in one test (this number cannot be too small)
 template<typename T> Stats Benchmark(int num, int pointCount, int sampleCount, int resolution)
 {
-    std::cout << "Benchmark begin " << "(Resolution: " << resolution << ")" << std::endl ;
-
-    double* records = new double[num];
+    std::cout << "Benchmark begin with resolution " << resolution  << std::endl;
 
     Stats result = { 0, 0 };
+    ProgressBar bar = ProgressBar(num * sampleCount * pointCount * (pointCount + 1) / 2);
+    double* records = new double[num];
+
+    std::thread t([&] { bar.run(50, 200); });
 
     for (int i = 0; i < num; i++)
     {
-        int x = (int)((double)i / num * 10000);
-
-        if (x % 1000 == 0)
-        {
-            std::cout << x / 100 << "%" << std::endl;
-        }
-
-        records[i] = Regress<T>(pointCount, sampleCount, resolution);
+        records[i] = Regress<T>(pointCount, sampleCount, resolution, bar.current);
 
         result.avg += records[i];
     }
+
+    t.join();
 
     result.avg /= num;
 
@@ -126,35 +222,17 @@ template<typename T> Stats Benchmark(int num, int pointCount, int sampleCount, i
 
     result.dev = std::sqrt(result.dev / num);
 
-    std::cout << "100%" << std::endl << std::endl;
-
     delete[] records;
 
-    return { result.avg, result.dev };
+    result.PrintAuto();
+
+    return result;
 }
-
-// use this method to find resolution automatically
-template<typename T> int FindResolution(int sampleCount)
-{
-    double result = 0;
-
-    int i = 0;
-
-    while (result < 10000) // 10 000 gives less error; you can use any nuber, but below 1000 gives unresonable big error
-    {
-        i++;
-
-        result = Sample<T>(sampleCount, i);
-    }
-
-    return i;
-}
-
-template<typename T> Stats BenchmarkAuto()
+template<typename T> Stats Benchmark()
 {
     int num = 20;
-    int pointCount = 20;
-    int sampleCount = 10;
+    int pointCount = 40;
+    int sampleCount = 20;
     int resolution = FindResolution<T>(sampleCount);
 
     return Benchmark<T>(num, pointCount, sampleCount, resolution);

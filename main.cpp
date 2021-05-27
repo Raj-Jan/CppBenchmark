@@ -6,33 +6,36 @@ struct Vector
 {
 	float x, y, z;
 
-	Vector operator-()
+	Vector() { }
+	Vector(float x, float y, float z) : x (x), y(y), z(z) { }
+
+	Vector operator-() const
 	{
 		return { -x, -y, -z };
 	}
-	Vector operator+(Vector other)
+	Vector operator+(const Vector other) const
 	{
 		return { x + other.x, y + other.y, z + other.z };
 	}
-	Vector operator-(Vector other)
+	Vector operator-(const Vector other) const
 	{
 		return { x - other.x, y - other.y, z - other.z };
 	}
 
-	Vector operator*(float other)
+	Vector operator*(float other) const
 	{
 		return { x * other, y * other, z * other };
 	}
-	Vector operator/(float other)
+	Vector operator/(float other) const
 	{
 		return { x / other, y / other, z / other };
 	}
 
-	Vector operator^(Vector other)
+	Vector operator^(const Vector other) const
 	{
 		return { y * other.z - z * other.y, z * other.x - x * other.z, x * other.y - y * other.x };
 	}
-	float  operator|(Vector other)
+	float  operator|(const Vector other) const
 	{
 		return x * other.x + y * other.y + z * other.z;
 	}
@@ -40,13 +43,11 @@ struct Vector
 
 struct Matrix_
 {
-	static Matrix_ Create(Vector axis, float angle);
-
 	float m00, m01, m02;
 	float m10, m11, m12;
 	float m20, m21, m22;
 
-	Matrix_ operator~()
+	Matrix_ operator~() const
 	{
 		return
 		{
@@ -55,7 +56,7 @@ struct Matrix_
 			m02, m12, m22
 		};
 	}
-	Matrix_ operator*(Matrix_ other)
+	Matrix_ operator*(Matrix_ other) const
 	{
 		return
 		{
@@ -72,7 +73,7 @@ struct Matrix_
 			m20 * other.m02 + m21 * other.m12 + m22 * other.m22
 		};
 	}
-	Vector  operator*(Vector other)
+	Vector  operator*(Vector other) const
 	{
 		return
 		{
@@ -115,11 +116,11 @@ struct Quaternion_
 		};
 	}
 
-	Quaternion_ operator~()
+	Quaternion_ operator~() const
 	{
 		return { -im, re };
 	}
-	Quaternion_ operator*(Quaternion_ other)
+	Quaternion_ operator*(Quaternion_ other) const
 	{
 		return
 		{
@@ -127,11 +128,43 @@ struct Quaternion_
 			re * other.re - (im | other.im)
 		};
 	}
-	Vector      operator*(Vector other)
+	Vector      operator*(Vector other) const
 	{
 		Vector cross = (im ^ other);
 
 		return other + cross * (2 * re) + (im ^ cross) * 2;
+	}
+};
+
+struct AxisAngle
+{
+	Vector axisangle;
+
+	AxisAngle(Vector axis, float angle = 1)
+	{
+		axisangle =  axis * angle;
+	}
+
+	Matrix_ ToMatrix()
+	{
+		float angle = sqrtf(axisangle | axisangle);
+		Vector axis = axis / angle;
+
+		return Quaternion_::Create(axis, angle).ToMatrix();
+	}
+
+	AxisAngle operator*(const AxisAngle& other) const
+	{
+		return { axisangle + other.axisangle + (axisangle ^ other.axisangle) / 2 };
+	}
+	Vector      operator*(Vector other) const
+	{
+		float angle = sqrtf(axisangle | axisangle);
+		Vector axis = axis / angle;
+
+		Quaternion_ q = Quaternion_::Create(axis, angle);
+
+		return q * other;
 	}
 };
 
@@ -145,8 +178,7 @@ Quaternion_ Quaternion_::Create(Vector axis, float angle)
 	return { axis * sin, cos };
 }
 
-
-class Test1
+struct Test1
 {
 	Quaternion_ q1 = Quaternion_::Create({ 0, 0, 1 }, 1);
 	Quaternion_ q2 = Quaternion_::Create({ 0, 1, 0 }, 1);
@@ -158,7 +190,7 @@ public:
 	}
 };
 
-class Test2 
+struct Test2
 {
 	Matrix_ q1 = Quaternion_::Create({ 0, 0, 1 }, 1).ToMatrix();
 	Matrix_ q2 = Quaternion_::Create({ 0, 1, 0 }, 1).ToMatrix();
@@ -170,9 +202,273 @@ public:
 	}
 };
 
+struct Test3
+{
+	AxisAngle q1 = AxisAngle({ 0, 0, 1 }, 1);
+	AxisAngle q2 = AxisAngle({ 0, 1, 0 }, 1);
+
+public:
+	void operator ()()
+	{
+		q1 = q1 * q2;
+	}
+};
+
+#include <stdlib.h>
+
+class Test_1
+{
+	int ptr = rand();
+	int result;
+
+public:
+	void operator()()
+	{
+		if (ptr)
+		{
+			result++;
+		}
+		else
+		{
+			result--;
+		}
+	}
+};
+
+class Test_2
+{
+	uint64_t ptr = rand();
+	int result;
+
+public:
+	void operator()()
+	{
+		if (ptr)
+		{
+			result++;
+		}
+		else
+		{
+			result--;
+		}
+	}
+};
+
+class Test_3
+{
+	void* ptr;
+
+	int result;
+
+public:
+	Test_3()
+	{
+		int x = rand();
+
+		ptr = reinterpret_cast<void*>(x);
+	}
+
+	void operator()()
+	{
+		if (ptr)
+		{
+			result++;
+		}
+		else
+		{
+			result--;
+		}
+	}
+};
+
+class ID
+{
+	static int key;
+
+public:
+	template<typename T> static int value()
+	{
+		const static int id = key++;
+
+		return id;
+	}
+};
+
+#include <unordered_map>
+#include <vector>
+
+
+
+class StackLeft final
+{
+	void* top;
+
+public:
+	StackLeft()
+	{
+		top = &top + 1;
+	}
+	~StackLeft() = default;
+
+	template<typename T> T* const alloc()
+	{
+		T* const result = (T*)top;
+
+		top = (char*)top + sizeof(T);
+
+		return result;
+	}
+	template<typename T> void free(T* const obj)
+	{
+		top = (char*)top - sizeof(T);
+	}
+
+	size_t size()
+	{
+		return (char*)top - (char*)&top;
+	}
+};
+
+struct Foo
+{
+	int x;
+
+	Foo()
+	{
+		std::cout << x << " constructor Foo\n";
+	}
+	~Foo()
+	{
+		std::cout << x << " destructor Foo\n";
+	}
+};
+
+struct Memory
+{
+	StackLeft allocator;
+	char memory[1024];
+};
+
+Memory memory;
+
+template<typename T>
+struct Pointer
+{
+	T* const value = memory.allocator.alloc<T>();
+
+public:
+	Pointer()
+	{
+		new (value) T();
+	}
+	~Pointer()
+	{
+		value->~T();
+		memory.allocator.free(value);
+	}
+
+	T* const operator ()() const
+	{
+		return value;
+	}
+};
+
+struct Tet_0
+{
+	void operator()()
+	{
+		int* ptr = new int();
+		delete ptr;
+	}
+};
+
+struct Tet_1
+{
+	void operator()()
+	{
+		Pointer<int> ptr;
+	}
+};
+
+struct Tet_2
+{
+	void operator()()
+	{
+		int* const ptr = memory.allocator.alloc<int>();
+
+		new (ptr) int();
+
+		memory.allocator.free(ptr);
+	}
+};
+
+int foo(int x)
+{
+	return x++;
+}
+
+class Tut_1
+{
+	int result;
+	int limit;
+
+	std::unordered_map<int, int(*)(int)> map;
+
+public:
+	Tut_1()
+	{
+		int result = rand();
+		int limit = rand();
+
+		map.emplace(0, &foo);
+	}
+
+	void operator()()
+	{
+		if (limit == 0)
+			result = map[0](result);
+	}
+};
+
+class Tut_2
+{
+	int result;
+	int limit;
+
+public:
+	Tut_2()
+	{
+		int result = rand();
+		int limit = rand();
+	}
+
+	void operator()()
+	{
+		switch (limit)
+		{
+		case 0:
+			result++; break;
+		default:
+			return;
+		}
+	}
+};
+
 int main()
 {
-	// test time of multiplication operator on quaternions and matrices
-	BenchmarkAuto<Test1>().PrintNS();
-	BenchmarkAuto<Test2>().PrintNS();
+    //test time of multiplication operator on quaternions and matrices
+	//Benchmark<Test1>();
+	//Benchmark<Test2>();
+	//Benchmark<Test3>();
+
+	//Benchmark<Test_1>();
+	//Benchmark<Test_2>();
+	//Benchmark<Test_3>();
+
+	Benchmark<Tet_0>();
+	Benchmark<Tet_1>();
+	Benchmark<Tet_2>();
+
+	//Benchmark<Tut_1>();
+	//Benchmark<Tut_2>();
 }
