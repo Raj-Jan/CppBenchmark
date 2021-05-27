@@ -2,8 +2,7 @@
 
 Usage:
 1. Copy file CppBenchmark.h to your project.
-2. #include it and invoke Benchmark or BenchmarkAuto functions.
-3. (optional) Invoke print method on result.
+2. #include it and invoke Benchmark functions.
 
 Methods uses console to print progression and results.
 
